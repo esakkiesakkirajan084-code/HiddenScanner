@@ -45,7 +45,7 @@ class MainActivity : Activity() {
         val text = p.inputStream.bufferedReader().readText()
         val err = p.errorStream.bufferedReader().readText()
         p.waitFor()
-        return text + (if (err.isNotBlank()) "[err] " + err.take(150) else "")
+        return text + (if (err.isNotBlank()) "[err] " + err.take(120) else "")
     }
 
     private fun pkgs(cmd: String): Set<String> = sh(cmd).lines()
@@ -72,32 +72,25 @@ class MainActivity : Activity() {
 
     private fun probe() {
         if (!ready()) return
-        out.text = "Searching..."
+        out.text = "Searching... (about 20 seconds)"
         thread {
             val sb = StringBuilder()
-            val kw = "'hide|hidden|privacy|lock_app|applock'"
-            val launcher = sh(
-                "cmd package resolve-activity --brief -a android.intent.action.MAIN " +
-                "-c android.intent.category.HOME"
-            ).lines().lastOrNull { it.contains("/") }?.trim()?.substringBefore("/") ?: ""
-            sb.append("Phone: ").append(sh("getprop ro.product.manufacturer").trim())
-                .append(" ").append(sh("getprop ro.product.model").trim()).append("\n")
-            sb.append("Launcher: ").append(launcher).append("\n\n")
+            val pat = "'telegram|zarchiver|shizuku|godx|god x'"
             val cmds = listOf(
-                "settings list secure | grep -i -E $kw | head -n 12",
-                "settings list system | grep -i -E $kw | head -n 12",
-                "settings list global | grep -i -E $kw | head -n 12",
-                "dumpsys activity service $launcher 2>&1 | grep -i -E $kw | head -n 12",
-                "dumpsys package $launcher 2>&1 | grep -i -E 'hide|hidden' | head -n 8",
-                "content query --uri content://$launcher.settings/favorites 2>&1 | head -n 4",
-                "content query --uri content://$launcher.settings/hide_apps 2>&1 | head -n 6",
-                "content query --uri content://$launcher.settings/hidden_apps 2>&1 | head -n 6",
-                "pm list packages | grep -i -E 'applock|privacy|hide|vault' | head -n 10"
+                "dumpsys package providers | grep -i -E 'launcher|bbk|hideapp|privacy' | head -n 12",
+                "content query --uri content://com.bbk.launcher2.settings/favorites 2>&1 | grep -i -E $pat | head -n 6",
+                "content query --uri content://com.bbk.launcher2.settings/favorites 2>&1 | head -n 3 | cut -c1-200",
+                "content query --uri content://com.bbk.launcher2.hideapps/apps 2>&1 | head -n 3 | cut -c1-200",
+                "content query --uri content://com.vivo.launcher.hideapps 2>&1 | head -n 3 | cut -c1-200",
+                "content query --uri content://com.android.launcher3.hideapps 2>&1 | head -n 3 | cut -c1-200",
+                "ls /data/user/0/com.android.launcher3/databases 2>&1 | head -n 8",
+                "ls /data/user_de/0/com.android.launcher3/databases 2>&1 | head -n 8",
+                "pm list packages | grep -i -E 'launcher|hideapp|bbk' | head -n 12"
             )
             for (c in cmds) {
-                sb.append("> ").append(c.take(70)).append("\n")
+                sb.append("> ").append(c.take(75)).append("\n")
                 try {
-                    sb.append(sh(c).take(800).ifBlank { "(nothing)" }).append("\n\n")
+                    sb.append(sh(c).take(700).ifBlank { "(nothing)" }).append("\n\n")
                 } catch (e: Throwable) {
                     sb.append("error: ").append(e.message).append("\n\n")
                 }
