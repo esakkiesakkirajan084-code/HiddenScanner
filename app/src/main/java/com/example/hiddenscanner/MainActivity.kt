@@ -71,55 +71,43 @@ class MainActivity : Activity() {
         return true
     }
 
+    private fun tryPath(path: String, sb: StringBuilder) {
+        val pat = Regex("telegram|zarchiver|shizuku|godx|god x|mods", RegexOption.IGNORE_CASE)
+        try {
+            val c = contentResolver.query(Uri.parse("content://com.bbk.launcher2.settings/$path"), null, null, null, null)
+            if (c == null) {
+                sb.append("$path: null\n")
+                return
+            }
+            sb.append("$path: OK rows=").append(c.count).append("\n")
+            sb.append("  cols=").append(c.columnNames.joinToString(",").take(160)).append("\n")
+            var n = 0
+            var m = 0
+            while (c.moveToNext()) {
+                val row = (0 until c.columnCount).joinToString("|") {
+                    try { c.getString(it) ?: "" } catch (e: Throwable) { "?" }
+                }
+                if (n < 3) { sb.append("  row: ").append(row.take(160)).append("\n"); n++ }
+                if (pat.containsMatchIn(row) && m < 6) { sb.append("  MATCH: ").append(row.take(160)).append("\n"); m++ }
+            }
+            c.close()
+        } catch (e: Throwable) {
+            sb.append("$path: ").append(e.javaClass.simpleName).append(" ")
+                .append((e.message ?: "").take(60)).append("\n")
+        }
+    }
+
     private fun probe() {
-        out.text = "Testing... (about 15 seconds)"
+        out.text = "Testing table names..."
         thread {
             val sb = StringBuilder()
-            val canShell = try { Shizuku.pingBinder() } catch (e: Throwable) { false }
-            if (canShell) {
-                try {
-                    sb.append("PERMISSION INFO:\n")
-                    sb.append(sh("dumpsys package com.android.launcher3 | grep -i -A3 'Permission \\[com.bbk' | head -n 16").take(1200).ifBlank { "(nothing)" })
-                    sb.append("\n\n")
-                } catch (e: Throwable) {
-                    sb.append("perm info error: ").append(e.message).append("\n\n")
-                }
-            }
-            sb.append("APP GRANTED?\n")
-            for (p in listOf("com.bbk.launcher2.permission.READ_SETTINGS", "com.android.launcher.permission.READ_SETTINGS")) {
-                val g = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
-                sb.append(p).append(" = ").append(g).append("\n")
-            }
-            sb.append("\nDIRECT READ OF LAUNCHER LIST:\n")
-            try {
-                val c = contentResolver.query(
-                    Uri.parse("content://com.bbk.launcher2.settings/favorites"), null, null, null, null
-                )
-                if (c == null) {
-                    sb.append("cursor is null\n")
-                } else {
-                    sb.append("columns: ").append(c.columnNames.joinToString(",")).append("\n")
-                    sb.append("rows: ").append(c.count).append("\n\n")
-                    val pat = Regex("telegram|zarchiver|shizuku|godx|god x|mods", RegexOption.IGNORE_CASE)
-                    var shown = 0
-                    var first = true
-                    while (c.moveToNext()) {
-                        val row = (0 until c.columnCount).joinToString("|") {
-                            try { c.getString(it) ?: "" } catch (e: Throwable) { "?" }
-                        }
-                        if (first) { sb.append("first row: ").append(row.take(300)).append("\n\n"); first = false }
-                        if (pat.containsMatchIn(row) && shown < 8) {
-                            sb.append("MATCH: ").append(row.take(300)).append("\n\n")
-                            shown++
-                        }
-                    }
-                    sb.append("matches shown: ").append(shown).append("\n")
-                    c.close()
-                }
-            } catch (e: Throwable) {
-                sb.append("FAILED: ").append(e.javaClass.simpleName).append("\n")
-                sb.append((e.message ?: "").take(500)).append("\n")
-            }
+            val paths = listOf(
+                "hide_apps", "hideapps", "hidden_apps", "hide_app", "hideApps", "hiddenApps",
+                "app_hide", "privacy_apps", "private_apps", "hide", "hidden",
+                "apps", "allapps", "workspaceScreens", "screens", "folders", "folder",
+                "favorites_hide", "hide_icons", "hideicon", "app_lock", "applock"
+            )
+            for (p in paths) tryPath(p, sb)
             runOnUiThread { out.text = sb.toString() }
         }
     }
