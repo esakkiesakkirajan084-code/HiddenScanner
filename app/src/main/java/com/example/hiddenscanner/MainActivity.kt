@@ -71,44 +71,61 @@ class MainActivity : Activity() {
         return true
     }
 
-    private fun dumpTable(name: String, sb: StringBuilder) {
-        val pat = Regex("telegram|zarchiver|shizuku|godx|god x|mods", RegexOption.IGNORE_CASE)
-        sb.append("## ").append(name).append("\n")
-        try {
-            val c = contentResolver.query(
-                Uri.parse("content://com.bbk.launcher2.settings/$name"), null, null, null, null
-            )
-            if (c == null) {
-                sb.append("null\n\n")
-                return
-            }
-            sb.append("rows=").append(c.count).append("\n")
-            sb.append("cols=").append(c.columnNames.joinToString(",").take(200)).append("\n")
-            var n = 0
-            var m = 0
-            while (c.moveToNext()) {
-                val row = (0 until c.columnCount).joinToString("|") {
-                    try { c.getString(it) ?: "" } catch (e: Throwable) { "?" }
-                }
-                if (n < 2) { sb.append("row: ").append(row.take(140)).append("\n"); n++ }
-                if (pat.containsMatchIn(row) && m < 5) { sb.append("MATCH: ").append(row.take(140)).append("\n"); m++ }
-            }
-            c.close()
-            sb.append("\n")
-        } catch (e: Throwable) {
-            sb.append("fail: ").append((e.message ?: "").take(80)).append("\n\n")
-        }
-    }
-
+    @Suppress("DEPRECATION")
     private fun probe() {
-        out.text = "Reading tables..."
+        out.text = "Searching system apps... (about 20 seconds)"
         thread {
             val sb = StringBuilder()
-            val tables = listOf(
-                "attribute", "group_data", "location_allapps", "desktopStyle",
-                "location_jan_drawer", "screen_jan_drawer", "location_simple", "android_metadata"
-            )
-            for (t in tables) dumpTable(t, sb)
+            val pat = Regex("hide|hidden|privacy|applock|app_lock|vault|secure", RegexOption.IGNORE_CASE)
+            val pkgPat = Regex("vivo|bbk|iqoo|launcher|settings|safecenter|permission|privacy", RegexOption.IGNORE_CASE)
+            val names = try {
+                packageManager.getInstalledApplications(0).map { it.packageName }.filter { pkgPat.containsMatchIn(it) }
+            } catch (e: Throwable) {
+                sb.append("list failed: ").append(e.message).append("\n")
+                emptyList()
+            }
+            sb.append("Packages checked: ").append(names.size).append("\n\n")
+            val tried = HashSet<String>()
+            sb.append("SCREENS (activities with hide/privacy names):\n")
+            var screens = 0
+            for (n in names) {
+                try {
+                    val pi = packageManager.getPackageInfo(n, PackageManager.GET_ACTIVITIES or PackageManager.GET_PROVIDERS)
+                    pi.activities?.forEach { a ->
+                        if (pat.containsMatchIn(a.name) && screens < 14) {
+                            sb.append(" ").append(n).append("/").append(a.name.substringAfterLast('.')).append(" exp=").append(a.exported).append("\n")
+                            screens++
+                        }
+                    }
+                } catch (e: Throwable) { }
+            }
+            if (screens == 0) sb.append(" (none)\n")
+            sb.append("\nPROVIDERS (hide/privacy names, or launcher):\n")
+            var provs = 0
+            for (n in names) {
+                try {
+                    val pi = packageManager.getPackageInfo(n, PackageManager.GET_PROVIDERS)
+                    pi.providers?.forEach { p ->
+                        val auth = (p.authority ?: "").split(";").first()
+                        val interesting = pat.containsMatchIn(auth) || pat.containsMatchIn(p.name) ||
+                            n == "com.android.launcher3"
+                        if (interesting && auth.isNotEmpty() && tried.add(auth) && provs < 14) {
+                            provs++
+                            var result: String
+                            try {
+                                val c = contentResolver.query(Uri.parse("content://$auth"), null, null, null, null)
+                                result = if (c == null) "null" else "OK rows=" + c.count + " cols=" + c.columnNames.joinToString(",").take(80)
+                                c?.close()
+                            } catch (e: Throwable) {
+                                result = e.javaClass.simpleName + ": " + (e.message ?: "").take(70)
+                            }
+                            sb.append(" ").append(auth).append("\n   exp=").append(p.exported)
+                                .append(" read=").append(p.readPermission).append("\n   ").append(result).append("\n")
+                        }
+                    }
+                } catch (e: Throwable) { }
+            }
+            if (provs == 0) sb.append(" (none)\n")
             runOnUiThread { out.text = sb.toString() }
         }
     }
