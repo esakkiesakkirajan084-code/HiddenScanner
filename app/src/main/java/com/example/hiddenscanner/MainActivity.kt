@@ -71,43 +71,51 @@ class MainActivity : Activity() {
         return true
     }
 
-    private fun tryPath(path: String, sb: StringBuilder) {
-        val pat = Regex("telegram|zarchiver|shizuku|godx|god x|mods", RegexOption.IGNORE_CASE)
-        try {
-            val c = contentResolver.query(Uri.parse("content://com.bbk.launcher2.settings/$path"), null, null, null, null)
-            if (c == null) {
-                sb.append("$path: null\n")
-                return
-            }
-            sb.append("$path: OK rows=").append(c.count).append("\n")
-            sb.append("  cols=").append(c.columnNames.joinToString(",").take(160)).append("\n")
-            var n = 0
-            var m = 0
-            while (c.moveToNext()) {
-                val row = (0 until c.columnCount).joinToString("|") {
-                    try { c.getString(it) ?: "" } catch (e: Throwable) { "?" }
-                }
-                if (n < 3) { sb.append("  row: ").append(row.take(160)).append("\n"); n++ }
-                if (pat.containsMatchIn(row) && m < 6) { sb.append("  MATCH: ").append(row.take(160)).append("\n"); m++ }
-            }
-            c.close()
-        } catch (e: Throwable) {
-            sb.append("$path: ").append(e.javaClass.simpleName).append(" ")
-                .append((e.message ?: "").take(60)).append("\n")
-        }
-    }
-
     private fun probe() {
-        out.text = "Testing table names..."
+        out.text = "Reading database table list..."
         thread {
             val sb = StringBuilder()
-            val paths = listOf(
-                "hide_apps", "hideapps", "hidden_apps", "hide_app", "hideApps", "hiddenApps",
-                "app_hide", "privacy_apps", "private_apps", "hide", "hidden",
-                "apps", "allapps", "workspaceScreens", "screens", "folders", "folder",
-                "favorites_hide", "hide_icons", "hideicon", "app_lock", "applock"
-            )
-            for (p in paths) tryPath(p, sb)
+            val base = "content://com.bbk.launcher2.settings/"
+            try {
+                val c = contentResolver.query(Uri.parse(base + "sqlite_master"), null, null, null, null)
+                if (c == null) {
+                    sb.append("sqlite_master: null\n")
+                } else {
+                    sb.append("TABLES FOUND (").append(c.count).append("):\n")
+                    val cols = c.columnNames.toList()
+                    val ni = cols.indexOf("name")
+                    val ti = cols.indexOf("type")
+                    while (c.moveToNext()) {
+                        val name = if (ni >= 0) c.getString(ni) else "?"
+                        val type = if (ti >= 0) c.getString(ti) else "?"
+                        sb.append(" - ").append(name).append(" (").append(type).append(")\n")
+                    }
+                    c.close()
+                }
+            } catch (e: Throwable) {
+                sb.append("sqlite_master FAILED: ").append(e.javaClass.simpleName).append("\n")
+                sb.append((e.message ?: "").take(300)).append("\n")
+            }
+            sb.append("\nITEM TYPES IN favorites:\n")
+            try {
+                val c = contentResolver.query(
+                    Uri.parse(base + "favorites"), arrayOf("itemType", "profileId", "title", "intent"),
+                    null, null, null
+                )
+                if (c != null) {
+                    val counts = HashMap<String, Int>()
+                    while (c.moveToNext()) {
+                        val k = "type=" + c.getString(0) + " profile=" + c.getString(1)
+                        counts[k] = (counts[k] ?: 0) + 1
+                    }
+                    c.close()
+                    counts.entries.sortedBy { it.key }.forEach {
+                        sb.append(" ").append(it.key).append(" : ").append(it.value).append("\n")
+                    }
+                }
+            } catch (e: Throwable) {
+                sb.append("failed: ").append((e.message ?: "").take(200)).append("\n")
+            }
             runOnUiThread { out.text = sb.toString() }
         }
     }
