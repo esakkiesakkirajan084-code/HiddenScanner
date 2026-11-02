@@ -2,6 +2,7 @@ package com.example.hiddenscanner
 
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
@@ -71,29 +72,53 @@ class MainActivity : Activity() {
     }
 
     private fun probe() {
-        if (!ready()) return
-        out.text = "Searching... (about 20 seconds)"
+        out.text = "Testing... (about 15 seconds)"
         thread {
             val sb = StringBuilder()
-            val pat = "'telegram|zarchiver|shizuku|godx|god x'"
-            val cmds = listOf(
-                "dumpsys package providers | grep -i -E 'launcher|bbk|hideapp|privacy' | head -n 12",
-                "content query --uri content://com.bbk.launcher2.settings/favorites 2>&1 | grep -i -E $pat | head -n 6",
-                "content query --uri content://com.bbk.launcher2.settings/favorites 2>&1 | head -n 3 | cut -c1-200",
-                "content query --uri content://com.bbk.launcher2.hideapps/apps 2>&1 | head -n 3 | cut -c1-200",
-                "content query --uri content://com.vivo.launcher.hideapps 2>&1 | head -n 3 | cut -c1-200",
-                "content query --uri content://com.android.launcher3.hideapps 2>&1 | head -n 3 | cut -c1-200",
-                "ls /data/user/0/com.android.launcher3/databases 2>&1 | head -n 8",
-                "ls /data/user_de/0/com.android.launcher3/databases 2>&1 | head -n 8",
-                "pm list packages | grep -i -E 'launcher|hideapp|bbk' | head -n 12"
-            )
-            for (c in cmds) {
-                sb.append("> ").append(c.take(75)).append("\n")
+            val canShell = try { Shizuku.pingBinder() } catch (e: Throwable) { false }
+            if (canShell) {
                 try {
-                    sb.append(sh(c).take(700).ifBlank { "(nothing)" }).append("\n\n")
+                    sb.append("PERMISSION INFO:\n")
+                    sb.append(sh("dumpsys package com.android.launcher3 | grep -i -A3 'Permission \\[com.bbk' | head -n 16").take(1200).ifBlank { "(nothing)" })
+                    sb.append("\n\n")
                 } catch (e: Throwable) {
-                    sb.append("error: ").append(e.message).append("\n\n")
+                    sb.append("perm info error: ").append(e.message).append("\n\n")
                 }
+            }
+            sb.append("APP GRANTED?\n")
+            for (p in listOf("com.bbk.launcher2.permission.READ_SETTINGS", "com.android.launcher.permission.READ_SETTINGS")) {
+                val g = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
+                sb.append(p).append(" = ").append(g).append("\n")
+            }
+            sb.append("\nDIRECT READ OF LAUNCHER LIST:\n")
+            try {
+                val c = contentResolver.query(
+                    Uri.parse("content://com.bbk.launcher2.settings/favorites"), null, null, null, null
+                )
+                if (c == null) {
+                    sb.append("cursor is null\n")
+                } else {
+                    sb.append("columns: ").append(c.columnNames.joinToString(",")).append("\n")
+                    sb.append("rows: ").append(c.count).append("\n\n")
+                    val pat = Regex("telegram|zarchiver|shizuku|godx|god x|mods", RegexOption.IGNORE_CASE)
+                    var shown = 0
+                    var first = true
+                    while (c.moveToNext()) {
+                        val row = (0 until c.columnCount).joinToString("|") {
+                            try { c.getString(it) ?: "" } catch (e: Throwable) { "?" }
+                        }
+                        if (first) { sb.append("first row: ").append(row.take(300)).append("\n\n"); first = false }
+                        if (pat.containsMatchIn(row) && shown < 8) {
+                            sb.append("MATCH: ").append(row.take(300)).append("\n\n")
+                            shown++
+                        }
+                    }
+                    sb.append("matches shown: ").append(shown).append("\n")
+                    c.close()
+                }
+            } catch (e: Throwable) {
+                sb.append("FAILED: ").append(e.javaClass.simpleName).append("\n")
+                sb.append((e.message ?: "").take(500)).append("\n")
             }
             runOnUiThread { out.text = sb.toString() }
         }
