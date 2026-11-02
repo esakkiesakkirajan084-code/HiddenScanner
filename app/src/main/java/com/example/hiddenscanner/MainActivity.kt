@@ -71,51 +71,44 @@ class MainActivity : Activity() {
         return true
     }
 
+    private fun dumpTable(name: String, sb: StringBuilder) {
+        val pat = Regex("telegram|zarchiver|shizuku|godx|god x|mods", RegexOption.IGNORE_CASE)
+        sb.append("## ").append(name).append("\n")
+        try {
+            val c = contentResolver.query(
+                Uri.parse("content://com.bbk.launcher2.settings/$name"), null, null, null, null
+            )
+            if (c == null) {
+                sb.append("null\n\n")
+                return
+            }
+            sb.append("rows=").append(c.count).append("\n")
+            sb.append("cols=").append(c.columnNames.joinToString(",").take(200)).append("\n")
+            var n = 0
+            var m = 0
+            while (c.moveToNext()) {
+                val row = (0 until c.columnCount).joinToString("|") {
+                    try { c.getString(it) ?: "" } catch (e: Throwable) { "?" }
+                }
+                if (n < 2) { sb.append("row: ").append(row.take(140)).append("\n"); n++ }
+                if (pat.containsMatchIn(row) && m < 5) { sb.append("MATCH: ").append(row.take(140)).append("\n"); m++ }
+            }
+            c.close()
+            sb.append("\n")
+        } catch (e: Throwable) {
+            sb.append("fail: ").append((e.message ?: "").take(80)).append("\n\n")
+        }
+    }
+
     private fun probe() {
-        out.text = "Reading database table list..."
+        out.text = "Reading tables..."
         thread {
             val sb = StringBuilder()
-            val base = "content://com.bbk.launcher2.settings/"
-            try {
-                val c = contentResolver.query(Uri.parse(base + "sqlite_master"), null, null, null, null)
-                if (c == null) {
-                    sb.append("sqlite_master: null\n")
-                } else {
-                    sb.append("TABLES FOUND (").append(c.count).append("):\n")
-                    val cols = c.columnNames.toList()
-                    val ni = cols.indexOf("name")
-                    val ti = cols.indexOf("type")
-                    while (c.moveToNext()) {
-                        val name = if (ni >= 0) c.getString(ni) else "?"
-                        val type = if (ti >= 0) c.getString(ti) else "?"
-                        sb.append(" - ").append(name).append(" (").append(type).append(")\n")
-                    }
-                    c.close()
-                }
-            } catch (e: Throwable) {
-                sb.append("sqlite_master FAILED: ").append(e.javaClass.simpleName).append("\n")
-                sb.append((e.message ?: "").take(300)).append("\n")
-            }
-            sb.append("\nITEM TYPES IN favorites:\n")
-            try {
-                val c = contentResolver.query(
-                    Uri.parse(base + "favorites"), arrayOf("itemType", "profileId", "title", "intent"),
-                    null, null, null
-                )
-                if (c != null) {
-                    val counts = HashMap<String, Int>()
-                    while (c.moveToNext()) {
-                        val k = "type=" + c.getString(0) + " profile=" + c.getString(1)
-                        counts[k] = (counts[k] ?: 0) + 1
-                    }
-                    c.close()
-                    counts.entries.sortedBy { it.key }.forEach {
-                        sb.append(" ").append(it.key).append(" : ").append(it.value).append("\n")
-                    }
-                }
-            } catch (e: Throwable) {
-                sb.append("failed: ").append((e.message ?: "").take(200)).append("\n")
-            }
+            val tables = listOf(
+                "attribute", "group_data", "location_allapps", "desktopStyle",
+                "location_jan_drawer", "screen_jan_drawer", "location_simple", "android_metadata"
+            )
+            for (t in tables) dumpTable(t, sb)
             runOnUiThread { out.text = sb.toString() }
         }
     }
